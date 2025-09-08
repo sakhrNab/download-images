@@ -32,6 +32,32 @@ docker build -t fetch-images:latest .
 
 2) Run locally with Docker to smoke test:
 
+## Running with Docker Compose + Traefik (production on your server)
+
+This repo includes a ready-to-run `docker-compose.yml` that uses Traefik as a reverse proxy and TLS provider (Let's Encrypt). It will build your existing `Dockerfile` and obtain certificates for `download.aiwaverider.com`.
+
+Steps:
+
+1. On your server, install Docker and Docker Compose.
+2. Edit `.env` and replace `LETSENCRYPT_EMAIL` with your real email address.
+3. Ensure DNS A record for `download.aiwaverider.com` points to your server public IP.
+4. Open ports 80 and 443 in your firewall.
+5. Start the stack in the repo root:
+
+```powershell
+docker compose up -d --build
+```
+
+6. Monitor Traefik logs while the certificate is requested:
+
+```powershell
+docker compose logs -f traefik
+```
+
+Notes:
+- Traefik stores Let's Encrypt data in the `traefik_letsencrypt` volume. Back it up if you migrate.
+- If you prefer Coolify's managed TLS/proxy, you don't need this compose stack; instead deploy the Dockerfile in Coolify and add the domain there.
+
 ```powershell
 docker run --rm -p 3000:3000 --name fetch-test fetch-images:latest
 ```

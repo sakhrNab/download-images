@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.10
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --certificatesresolvers.le.acme.email=${LETSENCRYPT_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --log.level=INFO
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fetch-images:latest
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.download.rule=Host(`download.aiwaverider.com`)"
+      - "traefik.http.routers.download.entrypoints=websecure"
+      - "traefik.http.routers.download.tls=true"
+      - "traefik.http.routers.download.tls.certresolver=le"
+      - "traefik.http.services.download.loadbalancer.server.port=3000"
+      # redirect HTTP -> HTTPS
+      - "traefik.http.routers.download-http.rule=Host(`download.aiwaverider.com`)"
+      - "traefik.http.routers.download-http.entrypoints=web"
+      - "traefik.http.routers.download-http.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      # security headers (optional)
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Content-Type-Options=nosniff"
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Frame-Options=SAMEORIGIN"
+    depends_on:
+      - traefik
+    restart: unless-stopped
+
+volumes:
+  traefik_letsencrypt:
