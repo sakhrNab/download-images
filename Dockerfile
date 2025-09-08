@@ -13,7 +13,7 @@ COPY . .
 # Expose port (can be overridden by env)
 EXPOSE 3000
 
-# Healthcheck (optional)
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD wget -qO- http://localhost:3000/ || exit 1
+# Healthcheck (optional) - use /health for a small, fast probe and allow a start period
+HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 CMD wget -qO- http://localhost:3000/health || exit 1
 
 CMD ["node", "server.js"]

@@ -23,6 +23,9 @@ app.use(cors());
 // production: limit body size to avoid memory issues
 app.use(express.json({ limit: '1mb' }));
 app.set('trust proxy', true);
+
+// simple health endpoint for container orchestrators (fast, no JS required)
+app.get('/health', (req, res) => res.status(200).send('ok'));
 app.use(express.static('public'));
 
 const PORT = process.env.PORT || 3000;
