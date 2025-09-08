@@ -4,10 +4,17 @@
   "description": "Simple UI to fetch images from URLs and download them as a zip",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "echo 'No build step required for this project'",
+    "test": "echo 'No tests specified'"
   },
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "dependencies": {
     "archiver": "^5.3.1",
     "axios": "^1.4.0",
