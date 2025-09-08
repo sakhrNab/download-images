@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fetch Images & Zip</title>
+  <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h2>Fetch Images & Download Zip</h2>
+      <p>Enter one or more website URLs (one per line). The app will scan each page for &lt;img&gt; tags, filter small or GIF images, and create a zip.</p>
+
+      <label>Website URLs (one per line)</label>
+      <textarea id="urls" placeholder="https://example.com"></textarea>
+      <div class="buttons">
+        <button id="scan">Scan for images</button>
+        <button id="download" class="secondary">Download ZIP</button>
+      </div>
+
+      <div id="status"></div>
+
+      <div id="results"></div>
+    </div>
+
+    <script>
+      const scanBtn = document.getElementById('scan');
+      const dlBtn = document.getElementById('download');
+      const urlsEl = document.getElementById('urls');
+      const resultsEl = document.getElementById('results');
+      const statusEl = document.getElementById('status');
+
+      function parseUrls() {
+        return urlsEl.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      }
+
+      scanBtn.addEventListener('click', async () => {
+        const urls = parseUrls();
+        if (!urls.length) return alert('Enter at least one URL');
+        statusEl.textContent = 'Scanning...';
+        const res = await fetch('/api/scan', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ urls }) });
+        const data = await res.json();
+        statusEl.textContent = '';
+        resultsEl.innerHTML = '';
+        for (const u of urls) {
+          const div = document.createElement('div');
+          div.className = 'site';
+          const h = document.createElement('div');
+          h.textContent = u;
+          div.appendChild(h);
+          const pre = document.createElement('div');
+          pre.className = 'imgs';
+          if (data[u] && Array.isArray(data[u])) {
+            pre.textContent = data[u].map((s,i)=>`${i+1}. ${s}`).join('\n');
+          } else if (data[u] && data[u].error) {
+            pre.textContent = 'Error: ' + data[u].error;
+          } else {
+            pre.textContent = 'No images found or unexpected response.';
+          }
+          div.appendChild(pre);
+          resultsEl.appendChild(div);
+        }
+      });
+
+      dlBtn.addEventListener('click', async () => {
+        const urls = parseUrls();
+        if (!urls.length) return alert('Enter at least one URL');
+        statusEl.textContent = 'Preparing ZIP... this may take some time';
+        const resp = await fetch('/api/download', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ urls }) });
+        if (!resp.ok) {
+          statusEl.textContent = '';
+          return alert('Download failed');
+        }
+        const blob = await resp.blob();
+        const a = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        a.href = url;
+        a.download = 'images.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = 'Download ready';
+      });
+    </script>
+  </body>
+</html>
