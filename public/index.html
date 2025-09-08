@@ -8,14 +8,17 @@
   </head>
   <body>
     <div class="container">
-      <h2>Fetch Images & Download Zip</h2>
-      <p>Enter one or more website URLs (one per line). The app will scan each page for &lt;img&gt; tags, filter small or GIF images, and create a zip.</p>
+      <div class="header">
+        <h2 data-en="Fetch Images & Download Zip" data-ar="استخراج الصور وتحميلها كملف مضغوط">Fetch Images & Download Zip</h2>
+        <button id="langToggle" class="lang-toggle">العربية</button>
+      </div>
+      <p data-en="Enter one or more website URLs (one per line). The app will scan each page for &lt;img&gt; tags, filter small or GIF images, and create a zip." data-ar="أدخل رابط موقع ويب واحد أو أكثر (واحد في كل سطر). سيقوم التطبيق بفحص كل صفحة للبحث عن علامات &lt;img&gt;، وتصفية الصور الصغيرة أو صور GIF، وإنشاء ملف مضغوط.">Enter one or more website URLs (one per line). The app will scan each page for &lt;img&gt; tags, filter small or GIF images, and create a zip.</p>
 
-      <label>Website URLs (one per line)</label>
-      <textarea id="urls" placeholder="https://example.com"></textarea>
+      <label data-en="Website URLs (one per line)" data-ar="روابط مواقع الويب (واحد في كل سطر)">Website URLs (one per line)</label>
+      <textarea id="urls" placeholder="https://example.com" data-placeholder-en="https://example.com" data-placeholder-ar="https://example.com"></textarea>
       <div class="buttons">
-        <button id="scan">Scan for images</button>
-        <button id="download" class="secondary">Download ZIP</button>
+        <button id="scan" data-en="Scan for images" data-ar="فحص الصور">Scan for images</button>
+        <button id="download" class="secondary" data-en="Download ZIP" data-ar="تحميل ZIP">Download ZIP</button>
       </div>
 
       <div id="status"></div>
@@ -29,6 +32,57 @@
       const urlsEl = document.getElementById('urls');
       const resultsEl = document.getElementById('results');
       const statusEl = document.getElementById('status');
+      const langToggle = document.getElementById('langToggle');
+
+      // Language state
+      let currentLang = 'en';
+      const translations = {
+        en: {
+          'Enter at least one URL': 'Enter at least one URL',
+          'Scanning...': 'Scanning...',
+          'Error:': 'Error:',
+          'No images found or unexpected response.': 'No images found or unexpected response.',
+          'Preparing ZIP... this may take some time': 'Preparing ZIP... this may take some time',
+          'Download failed': 'Download failed',
+          'Download ready': 'Download ready'
+        },
+        ar: {
+          'Enter at least one URL': 'أدخل رابط واحد على الأقل',
+          'Scanning...': 'جاري الفحص...',
+          'Error:': 'خطأ:',
+          'No images found or unexpected response.': 'لم يتم العثور على صور أو استجابة غير متوقعة.',
+          'Preparing ZIP... this may take some time': 'جاري تحضير الملف المضغوط... قد يستغرق بعض الوقت',
+          'Download failed': 'فشل التحميل',
+          'Download ready': 'التحميل جاهز'
+        }
+      };
+
+      function translateText(key) {
+        return translations[currentLang][key] || key;
+      }
+
+      function switchLanguage() {
+        currentLang = currentLang === 'en' ? 'ar' : 'en';
+        document.documentElement.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+        document.documentElement.lang = currentLang;
+        
+        // Update toggle button text
+        langToggle.textContent = currentLang === 'en' ? 'العربية' : 'English';
+        
+        // Update all elements with data attributes
+        document.querySelectorAll('[data-en][data-ar]').forEach(el => {
+          el.textContent = el.getAttribute(`data-${currentLang}`);
+        });
+        
+        // Update placeholder
+        const placeholder = urlsEl.getAttribute(`data-placeholder-${currentLang}`);
+        if (placeholder) {
+          urlsEl.placeholder = placeholder;
+        }
+        
+        // Update page title
+        document.title = currentLang === 'en' ? 'Fetch Images & Zip' : 'استخراج الصور وتحميلها كملف مضغوط';
+      }
 
       function parseUrls() {
         return urlsEl.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -36,8 +90,8 @@
 
       scanBtn.addEventListener('click', async () => {
         const urls = parseUrls();
-        if (!urls.length) return alert('Enter at least one URL');
-        statusEl.textContent = 'Scanning...';
+        if (!urls.length) return alert(translateText('Enter at least one URL'));
+        statusEl.textContent = translateText('Scanning...');
         const res = await fetch('/api/scan', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ urls }) });
         const data = await res.json();
         statusEl.textContent = '';
@@ -53,9 +107,9 @@
           if (data[u] && Array.isArray(data[u])) {
             pre.textContent = data[u].map((s,i)=>`${i+1}. ${s}`).join('\n');
           } else if (data[u] && data[u].error) {
-            pre.textContent = 'Error: ' + data[u].error;
+            pre.textContent = translateText('Error:') + ' ' + data[u].error;
           } else {
-            pre.textContent = 'No images found or unexpected response.';
+            pre.textContent = translateText('No images found or unexpected response.');
           }
           div.appendChild(pre);
           resultsEl.appendChild(div);
@@ -64,12 +118,12 @@
 
       dlBtn.addEventListener('click', async () => {
         const urls = parseUrls();
-        if (!urls.length) return alert('Enter at least one URL');
-        statusEl.textContent = 'Preparing ZIP... this may take some time';
+        if (!urls.length) return alert(translateText('Enter at least one URL'));
+        statusEl.textContent = translateText('Preparing ZIP... this may take some time');
         const resp = await fetch('/api/download', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ urls }) });
         if (!resp.ok) {
           statusEl.textContent = '';
-          return alert('Download failed');
+          return alert(translateText('Download failed'));
         }
         const blob = await resp.blob();
         const a = document.createElement('a');
@@ -80,8 +134,14 @@
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        statusEl.textContent = 'Download ready';
+        statusEl.textContent = translateText('Download ready');
       });
+
+      // Language toggle event listener
+      langToggle.addEventListener('click', switchLanguage);
+
+      // Initialize with English
+      switchLanguage();
     </script>
   </body>
 </html>
