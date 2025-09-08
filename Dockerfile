@@ -38,16 +38,12 @@ COPY public/ /usr/share/nginx/html/
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Create startup script
-RUN echo '#!/bin/sh\n\
-# Start nginx in background\n\
-nginx -g "daemon off;" &\n\
-# Start Node.js API server\n\
-node server.js\n\
-' > /start.sh && chmod +x /start.sh
+# Copy startup script
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
 
 # Create a simple health check script
-RUN echo '#!/bin/sh\nwget --quiet --tries=1 --spider http://localhost/health || exit 1' > /healthcheck.sh && \
+RUN echo '#!/bin/sh\nwget --quiet --tries=1 --spider http://localhost:80/health || exit 1' > /healthcheck.sh && \
     chmod +x /healthcheck.sh
 
 # Expose port

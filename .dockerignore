@@ -69,6 +69,9 @@ Dockerfile*
 docker-compose*
 .dockerignore
 
+# Keep startup script
+!start.sh
+
 # Documentation
 README.md
 *.md
