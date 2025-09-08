@@ -1,3 +1,15 @@
+// Ensure global `File` exists (undici expects it). Node 18+ has Blob but not File.
+if (typeof globalThis.File === 'undefined' && typeof globalThis.Blob !== 'undefined') {
+  // Minimal File shim compatible with code checking for File
+  globalThis.File = class File extends globalThis.Blob {
+    constructor(chunks = [], name = '', options = {}) {
+      super(chunks, options);
+      this.name = String(name || '');
+      this.lastModified = options && options.lastModified ? Number(options.lastModified) : Date.now();
+    }
+  };
+}
+
 const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
