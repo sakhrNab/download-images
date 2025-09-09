@@ -16,14 +16,62 @@
 
       <label data-en="Website URLs (one per line)" data-ar="روابط مواقع الويب (واحد في كل سطر)">Website URLs (one per line)</label>
       <textarea id="urls" placeholder="https://example.com" data-placeholder-en="https://example.com" data-placeholder-ar="https://example.com"></textarea>
+      <div class="method-selection">
+        <label class="method-label" data-en="Scraping Method:" data-ar="طريقة الاستخراج:">Scraping Method:</label>
+        <div class="method-toggle">
+          <input type="radio" id="traditional" name="method" value="traditional" checked>
+          <label for="traditional" data-en="Traditional (Fast)" data-ar="تقليدي (سريع)">Traditional (Fast)</label>
+          <input type="radio" id="advanced" name="method" value="advanced">
+          <label for="advanced" data-en="Advanced Thunderbit (Powerful)" data-ar="متقدم (قوي)">Advanced Thunderbit (Powerful)</label>
+        </div>
+      </div>
+
       <div class="buttons">
         <button id="scan" data-en="Scan for images" data-ar="فحص الصور">Scan for images</button>
         <button id="download" class="secondary" data-en="Download ZIP" data-ar="تحميل ZIP">Download ZIP</button>
       </div>
 
+      <!-- Progress Bar -->
+      <div id="progressContainer" class="progress-container" style="display: none;">
+        <div class="progress-bar">
+          <div id="progressBar" class="progress-fill"></div>
+        </div>
+        <div id="progressText" class="progress-text">Initializing Advanced Thunderbit Scraper...</div>
+      </div>
+
       <div id="status"></div>
 
       <div id="results"></div>
+      
+      <!-- Image Selection Modal -->
+      <div id="imageModal" class="modal" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 data-en="Select Images to Download" data-ar="اختر الصور للتحميل">Select Images to Download</h3>
+            <button id="closeModal" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="selection-controls">
+              <button id="selectAll" data-en="Select All" data-ar="اختر الكل">Select All</button>
+              <button id="selectNone" data-en="Select None" data-ar="إلغاء الكل">Select None</button>
+              <span id="selectedCount" data-en="0 selected" data-ar="0 محدد">0 selected</span>
+            </div>
+            <div class="size-filters">
+              <label for="minWidth">Min Width:</label>
+              <input type="number" id="minWidth" placeholder="0" min="0" value="0">
+              <label for="minHeight">Min Height:</label>
+              <input type="number" id="minHeight" placeholder="0" min="0" value="0">
+              <button id="applySizeFilter" class="control-btn" data-en="Filter by Size" data-ar="تصفية حسب الحجم">Filter by Size</button>
+              <button id="clearSizeFilter" class="control-btn" data-en="Clear Filter" data-ar="مسح التصفية">Clear Filter</button>
+            </div>
+            <div id="imageGrid" class="image-grid"></div>
+          </div>
+          <div class="modal-footer">
+            <button id="downloadSelected" class="download-btn" data-en="Download Selected" data-ar="تحميل المحدد">Download Selected</button>
+            <button id="cancelSelection" class="cancel-btn" data-en="Cancel" data-ar="إلغاء">Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -33,6 +81,23 @@
       const resultsEl = document.getElementById('results');
       const statusEl = document.getElementById('status');
       const langToggle = document.getElementById('langToggle');
+      const progressContainer = document.getElementById('progressContainer');
+      const progressBar = document.getElementById('progressBar');
+      const progressText = document.getElementById('progressText');
+      const imageModal = document.getElementById('imageModal');
+      const imageGrid = document.getElementById('imageGrid');
+      const selectedCount = document.getElementById('selectedCount');
+      const selectAllBtn = document.getElementById('selectAll');
+      const selectNoneBtn = document.getElementById('selectNone');
+      const downloadSelectedBtn = document.getElementById('downloadSelected');
+      const cancelSelectionBtn = document.getElementById('cancelSelection');
+      const closeModal = document.getElementById('closeModal');
+      const traditionalMethod = document.getElementById('traditional');
+      const advancedMethod = document.getElementById('advanced');
+      const applySizeFilterBtn = document.getElementById('applySizeFilter');
+      const clearSizeFilterBtn = document.getElementById('clearSizeFilter');
+      const minWidthInput = document.getElementById('minWidth');
+      const minHeightInput = document.getElementById('minHeight');
 
       // Language state
       let currentLang = 'en';
@@ -59,6 +124,208 @@
 
       function translateText(key) {
         return translations[currentLang][key] || key;
+      }
+
+      // Progress tracking functions
+      function showProgress() {
+        progressContainer.style.display = 'block';
+        progressBar.style.width = '0%';
+      }
+
+      function hideProgress() {
+        progressContainer.style.display = 'none';
+      }
+
+      function updateProgress(percent, text) {
+        progressBar.style.width = percent + '%';
+        progressText.textContent = text;
+      }
+
+      function simulateProgress() {
+        const steps = [
+          { percent: 10, text: 'Initializing Advanced Thunderbit Scraper...' },
+          { percent: 25, text: 'Setting up stealth browser...' },
+          { percent: 40, text: 'Loading page with human-like behavior...' },
+          { percent: 60, text: 'Scrolling and triggering lazy loading...' },
+          { percent: 80, text: 'Extracting images from multiple sources...' },
+          { percent: 95, text: 'Processing and filtering results...' },
+          { percent: 100, text: 'Complete! Found images successfully.' }
+        ];
+
+        let currentStep = 0;
+        const interval = setInterval(() => {
+          if (currentStep < steps.length) {
+            const step = steps[currentStep];
+            updateProgress(step.percent, step.text);
+            currentStep++;
+          } else {
+            clearInterval(interval);
+          }
+        }, 800);
+      }
+
+      // Image selection functionality
+      let allImages = [];
+      let selectedImages = new Set();
+
+      function showImageModal(images) {
+        console.log('Showing image modal with images:', images);
+        console.log('Images type:', typeof images);
+        console.log('Images length:', images ? images.length : 'undefined');
+        
+        allImages = images;
+        selectedImages.clear();
+        imageGrid.innerHTML = '';
+        
+        // Handle different data structures
+        let imageList = [];
+        if (Array.isArray(images)) {
+          imageList = images;
+        } else if (images && typeof images === 'object') {
+          // If it's an object, try to extract image arrays from each site
+          imageList = [];
+          Object.values(images).forEach(siteImages => {
+            if (Array.isArray(siteImages)) {
+              imageList = imageList.concat(siteImages);
+            }
+          });
+        }
+        
+        console.log('Processed image list:', imageList);
+        console.log('Processed image list length:', imageList.length);
+        
+        if (imageList.length === 0) {
+          imageGrid.innerHTML = '<div class="no-images">No images found</div>';
+          updateSelectedCount();
+          imageModal.style.display = 'flex';
+          return;
+        }
+        
+        imageList.forEach((img, index) => {
+          // Handle both string URLs and objects with url property
+          const imageUrl = typeof img === 'string' ? img : (img.url || img.src || String(img));
+          
+          const imageItem = document.createElement('div');
+          imageItem.className = 'image-item';
+          imageItem.dataset.index = index;
+          
+          imageItem.innerHTML = `
+            <img src="${imageUrl}" alt="Image ${index + 1}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhmOWZhIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzZjNzU3ZCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIEVycm9yPC90ZXh0Pjwvc3ZnPg=='">
+            <div class="image-checkbox">✓</div>
+            <div class="image-info">${imageUrl.length > 50 ? imageUrl.substring(0, 50) + '...' : imageUrl}</div>
+          `;
+          
+          imageItem.addEventListener('click', () => toggleImageSelection(index));
+          imageGrid.appendChild(imageItem);
+        });
+        
+        updateSelectedCount();
+        imageModal.style.display = 'flex';
+      }
+
+      function toggleImageSelection(index) {
+        const imageItem = document.querySelector(`[data-index="${index}"]`);
+        if (selectedImages.has(index)) {
+          selectedImages.delete(index);
+          imageItem.classList.remove('selected');
+        } else {
+          selectedImages.add(index);
+          imageItem.classList.add('selected');
+        }
+        updateSelectedCount();
+      }
+
+      function updateSelectedCount() {
+        const count = selectedImages.size;
+        selectedCount.textContent = currentLang === 'en' ? `${count} selected` : `${count} محدد`;
+        downloadSelectedBtn.disabled = count === 0;
+      }
+
+      function selectAllImages() {
+        selectedImages.clear();
+        allImages.forEach((_, index) => selectedImages.add(index));
+        document.querySelectorAll('.image-item').forEach(item => item.classList.add('selected'));
+        updateSelectedCount();
+      }
+
+      function selectNoImages() {
+        selectedImages.clear();
+        document.querySelectorAll('.image-item').forEach(item => item.classList.remove('selected'));
+        updateSelectedCount();
+      }
+
+      function getSelectedImages() {
+        return Array.from(selectedImages).map(index => {
+          const img = allImages[index];
+          return typeof img === 'string' ? img : (img.url || img.src || String(img));
+        });
+      }
+
+      function filterImagesBySize(images, minWidth = 0, minHeight = 0) {
+        return images.filter(img => {
+          if (typeof img === 'string') return true; // Keep string URLs as-is
+          if (img && typeof img === 'object') {
+            const width = img.width || 0;
+            const height = img.height || 0;
+            return width >= minWidth && height >= minHeight;
+          }
+          return true;
+        });
+      }
+
+      function closeImageModal() {
+        imageModal.style.display = 'none';
+        allImages = [];
+        selectedImages.clear();
+      }
+
+      function applySizeFilter() {
+        const minWidth = parseInt(minWidthInput.value) || 0;
+        const minHeight = parseInt(minHeightInput.value) || 0;
+        
+        // Filter allImages based on size
+        const filteredImages = filterImagesBySize(allImages, minWidth, minHeight);
+        
+        // Clear current selection
+        selectedImages.clear();
+        
+        // Rebuild image grid with filtered images
+        imageGrid.innerHTML = '';
+        allImages = filteredImages;
+        
+        if (filteredImages.length === 0) {
+          imageGrid.innerHTML = '<div class="no-images">No images match the size criteria</div>';
+          updateSelectedCount();
+          return;
+        }
+        
+        // Recreate image grid
+        filteredImages.forEach((img, index) => {
+          const imageUrl = typeof img === 'string' ? img : (img.url || img.src || String(img));
+          
+          const imageItem = document.createElement('div');
+          imageItem.className = 'image-item';
+          imageItem.dataset.index = index;
+          
+          imageItem.innerHTML = `
+            <img src="${imageUrl}" alt="Image ${index + 1}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhmOWZhIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzZjNzU3ZCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIEVycm9yPC90ZXh0Pjwvc3ZnPg=='">
+            <div class="image-checkbox">✓</div>
+            <div class="image-info">${imageUrl.length > 50 ? imageUrl.substring(0, 50) + '...' : imageUrl}</div>
+            ${typeof img === 'object' && img.width && img.height ? `<div class="image-size">${img.width}x${img.height}</div>` : ''}
+          `;
+          
+          imageItem.addEventListener('click', () => toggleImageSelection(index));
+          imageGrid.appendChild(imageItem);
+        });
+        
+        updateSelectedCount();
+      }
+
+      function clearSizeFilter() {
+        minWidthInput.value = '0';
+        minHeightInput.value = '0';
+        // Rebuild with original images
+        showImageModal(allImages);
       }
 
       function switchLanguage() {
@@ -91,50 +358,198 @@
       scanBtn.addEventListener('click', async () => {
         const urls = parseUrls();
         if (!urls.length) return alert(translateText('Enter at least one URL'));
-        statusEl.textContent = translateText('Scanning...');
-        const res = await fetch('/api/scan', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ urls }) });
-        const data = await res.json();
-        statusEl.textContent = '';
-        resultsEl.innerHTML = '';
-        for (const u of urls) {
-          const div = document.createElement('div');
-          div.className = 'site';
-          const h = document.createElement('div');
-          h.textContent = u;
-          div.appendChild(h);
-          const pre = document.createElement('div');
-          pre.className = 'imgs';
-          if (data[u] && Array.isArray(data[u])) {
-            pre.textContent = data[u].map((s,i)=>`${i+1}. ${s}`).join('\n');
-          } else if (data[u] && data[u].error) {
-            pre.textContent = translateText('Error:') + ' ' + data[u].error;
-          } else {
-            pre.textContent = translateText('No images found or unexpected response.');
+        
+        // Get selected method
+        const selectedMethod = traditionalMethod.checked ? 'traditional' : 'advanced';
+        console.log('Selected method:', selectedMethod);
+        
+        // Show progress bar
+        showProgress();
+        simulateProgress();
+        
+        // Disable buttons during scanning
+        scanBtn.disabled = true;
+        dlBtn.disabled = true;
+        
+        try {
+          const res = await fetch('/api/scan', { 
+            method: 'POST', 
+            headers: {'Content-Type':'application/json'}, 
+            body: JSON.stringify({ 
+              urls,
+              method: selectedMethod 
+            }) 
+          });
+          const data = await res.json();
+          
+          // Hide progress and show results
+          hideProgress();
+          resultsEl.innerHTML = '';
+          
+          // Collect all images from all URLs
+          let allFoundImages = [];
+          
+          for (const u of urls) {
+            const div = document.createElement('div');
+            div.className = 'site';
+            const h = document.createElement('div');
+            h.textContent = u;
+            div.appendChild(h);
+            const pre = document.createElement('div');
+            pre.className = 'imgs';
+            
+            if (data[u] && Array.isArray(data[u])) {
+              pre.textContent = data[u].map((img,i)=>`${i+1}. ${typeof img === 'string' ? img : img.url}`).join('\n');
+              // Add images to collection
+              data[u].forEach(img => {
+                const url = typeof img === 'string' ? img : img.url;
+                allFoundImages.push({ url, source: u });
+              });
+            } else if (data[u] && data[u].error) {
+              pre.textContent = translateText('Error:') + ' ' + data[u].error;
+            } else {
+              pre.textContent = translateText('No images found or unexpected response.');
+            }
+            div.appendChild(pre);
+            resultsEl.appendChild(div);
           }
-          div.appendChild(pre);
-          resultsEl.appendChild(div);
+          
+          // Show image selection modal if images were found
+          if (allFoundImages.length > 0) {
+            console.log('Found images, showing modal:', allFoundImages.length);
+            showImageModal(allFoundImages);
+          } else {
+            console.log('No images found to display');
+            // Display a message in the main results area if no images are found
+            resultsEl.innerHTML = `<div class="no-images">${translateText('No images found for the provided URLs.')}</div>`;
+          }
+          
+          // Re-enable buttons
+          scanBtn.disabled = false;
+          dlBtn.disabled = false;
+          
+        } catch (error) {
+          hideProgress();
+          statusEl.textContent = translateText('Error:') + ' ' + error.message;
+          scanBtn.disabled = false;
+          dlBtn.disabled = false;
         }
       });
 
       dlBtn.addEventListener('click', async () => {
         const urls = parseUrls();
         if (!urls.length) return alert(translateText('Enter at least one URL'));
-        statusEl.textContent = translateText('Preparing ZIP... this may take some time');
-        const resp = await fetch('/api/download', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ urls }) });
-        if (!resp.ok) {
-          statusEl.textContent = '';
-          return alert(translateText('Download failed'));
+        
+        // Show progress bar
+        showProgress();
+        updateProgress(20, 'Preparing Advanced Thunderbit Scraper...');
+        
+        // Disable buttons during download
+        scanBtn.disabled = true;
+        dlBtn.disabled = true;
+        
+        try {
+          const resp = await fetch('/api/download', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ urls }) });
+          
+          if (!resp.ok) {
+            hideProgress();
+            return alert(translateText('Download failed'));
+          }
+          
+          updateProgress(80, 'Creating ZIP file...');
+          const blob = await resp.blob();
+          
+          updateProgress(100, 'Download ready!');
+          
+          setTimeout(() => {
+            const a = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = 'images.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            
+            hideProgress();
+            scanBtn.disabled = false;
+            dlBtn.disabled = false;
+          }, 500);
+          
+        } catch (error) {
+          hideProgress();
+          statusEl.textContent = translateText('Error:') + ' ' + error.message;
+          scanBtn.disabled = false;
+          dlBtn.disabled = false;
         }
-        const blob = await resp.blob();
-        const a = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        a.href = url;
-        a.download = 'images.zip';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        statusEl.textContent = translateText('Download ready');
+      });
+
+      // Modal event listeners
+      selectAllBtn.addEventListener('click', selectAllImages);
+      selectNoneBtn.addEventListener('click', selectNoImages);
+      applySizeFilterBtn.addEventListener('click', applySizeFilter);
+      clearSizeFilterBtn.addEventListener('click', clearSizeFilter);
+      downloadSelectedBtn.addEventListener('click', async () => {
+        const selectedImages = getSelectedImages();
+        if (selectedImages.length === 0) return;
+        
+        closeImageModal();
+        
+        // Show progress for download
+        showProgress();
+        updateProgress(20, 'Preparing download...');
+        
+        try {
+          // Remove duplicates from selected images
+          const uniqueImages = [...new Set(selectedImages)];
+          console.log(`Downloading ${uniqueImages.length} unique images (removed ${selectedImages.length - uniqueImages.length} duplicates)`);
+          
+          const resp = await fetch('/api/download', { 
+            method: 'POST', 
+            headers: {'Content-Type':'application/json'}, 
+            body: JSON.stringify({ 
+              urls: uniqueImages, // selectedImages are already URLs
+              selectedImages: true 
+            }) 
+          });
+          
+          if (!resp.ok) {
+            hideProgress();
+            return alert(translateText('Download failed'));
+          }
+          
+          updateProgress(80, 'Creating ZIP file...');
+          const blob = await resp.blob();
+          
+          updateProgress(100, 'Download ready!');
+          
+          setTimeout(() => {
+            const a = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = 'selected-images.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            
+            hideProgress();
+          }, 500);
+          
+        } catch (error) {
+          hideProgress();
+          statusEl.textContent = translateText('Error:') + ' ' + error.message;
+        }
+      });
+      
+      cancelSelectionBtn.addEventListener('click', closeImageModal);
+      closeModal.addEventListener('click', closeImageModal);
+      
+      // Close modal when clicking outside
+      imageModal.addEventListener('click', (e) => {
+        if (e.target === imageModal) {
+          closeImageModal();
+        }
       });
 
       // Language toggle event listener
