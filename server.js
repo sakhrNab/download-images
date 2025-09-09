@@ -56,40 +56,50 @@ class AdvancedThunderbitScraper {
 
   async initialize() {
     if (!this.browser) {
-      console.log('🚀 Initializing Advanced Thunderbit Scraper...');
-      
-      // Configure Puppeteer for Docker environment
-      const launchOptions = {
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=VizDisplayCompositor',
-          '--disable-web-security',
-          '--disable-features=TranslateUI',
-          '--disable-ipc-flooding-protection',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-gpu',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding'
-        ],
-        ignoreDefaultArgs: ['--enable-automation'],
-      };
+      try {
+        console.log('🚀 Initializing Advanced Thunderbit Scraper...');
+        
+        // Configure Puppeteer for Docker environment
+        const launchOptions = {
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-web-security',
+            '--disable-features=TranslateUI',
+            '--disable-ipc-flooding-protection',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding'
+          ],
+          ignoreDefaultArgs: ['--enable-automation'],
+        };
 
-      // Use system Chrome if available (for Docker)
-      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-        console.log('🔧 Using system Chrome:', process.env.PUPPETEER_EXECUTABLE_PATH);
+        // Use system Chrome if available (for Docker)
+        if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+          launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+          console.log('🔧 Using system Chrome:', process.env.PUPPETEER_EXECUTABLE_PATH);
+        }
+
+        this.browser = await puppeteerExtra.launch({
+          ...launchOptions,
+          ignoreHTTPSErrors: true
+        });
+        
+        console.log('✅ Advanced Thunderbit Scraper initialized successfully');
+      } catch (error) {
+        console.error('❌ Failed to initialize Advanced Thunderbit Scraper:', error.message);
+        console.error('❌ Full error:', error);
+        console.log('⚠️ Continuing with traditional scraping only...');
+        this.browser = null;
+        return null;
       }
-
-      this.browser = await puppeteerExtra.launch({
-        ...launchOptions,
-        ignoreHTTPSErrors: true
-      });
     }
     return this.browser;
   }
@@ -98,7 +108,12 @@ class AdvancedThunderbitScraper {
     try {
       console.log(`\n🎯 Advanced Thunderbit Scraper analyzing: ${url}`);
       
-      await this.initialize();
+      const browser = await this.initialize();
+      if (!browser) {
+        console.log('⚠️ Puppeteer not available, falling back to traditional scraping...');
+        return await this.scrapeWithTraditional(url);
+      }
+      
       this.page = await this.browser.newPage();
       
       // Advanced browser configuration
@@ -671,8 +686,14 @@ app.post('/api/scan', async (req, res) => {
       if (method === 'advanced') {
         // Use Advanced Thunderbit Scraper
         console.log(`🎯 Using Advanced Thunderbit Scraper for: ${site}`);
-        images = await advancedScraper.scrapeWithAdvancedThunderbit(site);
-        console.log(`👁️ Advanced Thunderbit found ${images.length} images`);
+        try {
+          images = await advancedScraper.scrapeWithAdvancedThunderbit(site);
+          console.log(`👁️ Advanced Thunderbit found ${images.length} images`);
+        } catch (error) {
+          console.error('❌ Advanced scraper failed, falling back to traditional:', error.message);
+          images = gatherImageUrlsFromHtml(site, resp.data);
+          console.log(`🔍 Traditional fallback found ${images.length} images`);
+        }
       } else {
         // Use traditional method
         console.log(`🔍 Using traditional method for: ${site}`);
@@ -826,8 +847,14 @@ app.post('/api/download', async (req, res) => {
       
       if (needsAdvancedScraping && traditionalImages.length === 0) {
         console.log(`🎯 Traditional method found no images, using Advanced Thunderbit Scraper for download: ${site}`);
-        visualImages = await advancedScraper.scrapeWithAdvancedThunderbit(site);
-        console.log(`👁️ Advanced Thunderbit found ${visualImages.length} images for download`);
+        try {
+          visualImages = await advancedScraper.scrapeWithAdvancedThunderbit(site);
+          console.log(`👁️ Advanced Thunderbit found ${visualImages.length} images for download`);
+        } catch (error) {
+          console.error('❌ Advanced scraper failed during download, using traditional results:', error.message);
+          visualImages = traditionalImages;
+          console.log(`🔍 Using traditional results for download: ${visualImages.length} images`);
+        }
       } else {
         // Use traditional results
         visualImages = traditionalImages;
