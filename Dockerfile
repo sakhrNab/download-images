@@ -1,19 +1,4 @@
-# Multi-stage build for production
-FROM node:18-slim AS builder
-
-# Set working directory
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci --only=production
-
-# Copy source code
-COPY . .
-
-# Production stage with Chrome support
+# Production stage with Chrome support for Coolify
 FROM node:18-slim
 
 # Install Chrome and dependencies
@@ -55,7 +40,6 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     libxss1 \
     libxtst6 \
-    nginx \
     && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
     && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update \
@@ -72,33 +56,23 @@ RUN npm ci --only=production
 # Copy server code
 COPY server.js ./
 
-# Remove default nginx configuration
-RUN rm -rf /etc/nginx/conf.d/default.conf
-
 # Copy static files
-COPY public/ /usr/share/nginx/html/
-
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# Copy startup script
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
+COPY public/ ./public/
 
 # Create a simple health check script
-RUN echo '#!/bin/sh\nwget --quiet --tries=1 --spider http://localhost:80/health || exit 1' > /healthcheck.sh && \
+RUN echo '#!/bin/sh\nwget --quiet --tries=1 --spider http://localhost:3001/health || exit 1' > /healthcheck.sh && \
     chmod +x /healthcheck.sh
 
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
-# Expose port
-EXPOSE 80
+# Expose port 3001 (Coolify will handle reverse proxy)
+EXPOSE 3001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD /healthcheck.sh
 
-# Start both services
-CMD ["/start.sh"]
+# Start the Node.js server directly
+CMD ["node", "server.js"]
