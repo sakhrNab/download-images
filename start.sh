@@ -5,4 +5,3 @@ nginx -g "daemon off;" &
 
 # Start Node.js API server
 node server.js
-
