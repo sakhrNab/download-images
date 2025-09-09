@@ -61,6 +61,8 @@
               <input type="number" id="minWidth" placeholder="0" min="0" value="0">
               <label for="minHeight">Min Height:</label>
               <input type="number" id="minHeight" placeholder="0" min="0" value="0">
+              <label for="minSizeKB">Min Size (KB):</label>
+              <input type="number" id="minSizeKB" placeholder="0" min="0" value="0">
               <button id="applySizeFilter" class="control-btn" data-en="Filter by Size" data-ar="تصفية حسب الحجم">Filter by Size</button>
               <button id="clearSizeFilter" class="control-btn" data-en="Clear Filter" data-ar="مسح التصفية">Clear Filter</button>
             </div>
@@ -261,13 +263,14 @@
         });
       }
 
-      function filterImagesBySize(images, minWidth = 0, minHeight = 0) {
+      function filterImagesBySize(images, minWidth = 0, minHeight = 0, minSizeKB = 0) {
         return images.filter(img => {
           if (typeof img === 'string') return true; // Keep string URLs as-is
           if (img && typeof img === 'object') {
             const width = img.width || 0;
             const height = img.height || 0;
-            return width >= minWidth && height >= minHeight;
+            const sizeKB = img.sizeKB || 0;
+            return width >= minWidth && height >= minHeight && sizeKB >= minSizeKB;
           }
           return true;
         });
@@ -282,9 +285,10 @@
       function applySizeFilter() {
         const minWidth = parseInt(minWidthInput.value) || 0;
         const minHeight = parseInt(minHeightInput.value) || 0;
+        const minSizeKB = parseInt(document.getElementById('minSizeKB').value) || 0;
         
         // Filter allImages based on size
-        const filteredImages = filterImagesBySize(allImages, minWidth, minHeight);
+        const filteredImages = filterImagesBySize(allImages, minWidth, minHeight, minSizeKB);
         
         // Clear current selection
         selectedImages.clear();
@@ -504,12 +508,15 @@
           const uniqueImages = [...new Set(selectedImages)];
           console.log(`Downloading ${uniqueImages.length} unique images (removed ${selectedImages.length - uniqueImages.length} duplicates)`);
           
+          const minSizeKB = parseInt(document.getElementById('minSizeKB').value) || 0;
+          
           const resp = await fetch('/api/download', { 
             method: 'POST', 
             headers: {'Content-Type':'application/json'}, 
             body: JSON.stringify({ 
               urls: uniqueImages, // selectedImages are already URLs
-              selectedImages: true 
+              selectedImages: true,
+              minSizeKB: minSizeKB 
             }) 
           });
           

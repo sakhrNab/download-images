@@ -58,7 +58,8 @@ class AdvancedThunderbitScraper {
     if (!this.browser) {
       console.log('🚀 Initializing Advanced Thunderbit Scraper...');
       
-      this.browser = await puppeteerExtra.launch({
+      // Configure Puppeteer for Docker environment
+      const launchOptions = {
         headless: true,
         args: [
           '--no-sandbox',
@@ -77,6 +78,16 @@ class AdvancedThunderbitScraper {
           '--disable-renderer-backgrounding'
         ],
         ignoreDefaultArgs: ['--enable-automation'],
+      };
+
+      // Use system Chrome if available (for Docker)
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        console.log('🔧 Using system Chrome:', process.env.PUPPETEER_EXECUTABLE_PATH);
+      }
+
+      this.browser = await puppeteerExtra.launch({
+        ...launchOptions,
         ignoreHTTPSErrors: true
       });
     }
@@ -609,7 +620,7 @@ function gatherImageUrlsFromHtml(base, html) {
 }
 
 app.post('/api/scan', async (req, res) => {
-  const { urls, method = 'traditional' } = req.body;
+  const { urls, method = 'advanced' } = req.body;
   if (!urls || !Array.isArray(urls)) return res.status(400).json({ error: 'urls must be an array' });
   
   console.log(`\n🎯 Using ${method} method for scanning`);
@@ -680,7 +691,7 @@ app.post('/api/scan', async (req, res) => {
 });
 
 app.post('/api/download', async (req, res) => {
-  const { urls, selectedImages } = req.body;
+  const { urls, selectedImages, minSizeKB = 0 } = req.body;
   if (!urls || !Array.isArray(urls)) return res.status(400).json({ error: 'urls must be an array' });
 
   res.setHeader('Content-Type', 'application/zip');
@@ -798,8 +809,11 @@ app.post('/api/download', async (req, res) => {
       
       // Step 1: Try traditional method first
       console.log(`🔍 Trying traditional method for download: ${site}`);
-      traditionalImages = gatherImageUrlsFromHtml(site, resp.data);
-      console.log(`📊 Traditional method found ${traditionalImages.length} images for download`);
+      const traditionalUrls = gatherImageUrlsFromHtml(site, resp.data);
+      console.log(`📊 Traditional method found ${traditionalUrls.length} images for download`);
+      
+      // Convert traditional URLs to image objects
+      traditionalImages = traditionalUrls.map(url => ({ url, source: 'traditional' }));
       
       // Step 2: Check if we need Advanced Thunderbit Scraper as fallback
       const needsAdvancedScraping = traditionalImages.length === 0 || 
@@ -822,7 +836,7 @@ app.post('/api/download', async (req, res) => {
       
       // Combine results and convert to simple array for download
       const combinedImages = [...visualImages, ...traditionalImages];
-      list = [...new Set(combinedImages)];
+      list = [...new Set(combinedImages.map(img => img.url))];
     } catch (e) {
       console.warn('Site gather failed', site, e && e.message);
       return;
@@ -888,7 +902,7 @@ app.post('/api/download', async (req, res) => {
           } catch (e) {
             return null;
           }
-        })(imgUrl, 100, site);
+        })(imgUrl, minSizeKB * 1024, site);
 
         if (!imgStream) return;
 
