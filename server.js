@@ -83,32 +83,24 @@ class AdvancedThunderbitScraper {
         ignoreDefaultArgs: ['--enable-automation'],
       };
 
-      // Use existing Chrome profile for authentication
-      if (process.platform === 'win32') {
-        // Windows Chrome profile path
-        const userDataDir = path.join(process.env.USERPROFILE, 'AppData', 'Local', 'Google', 'Chrome', 'User Data');
-        if (fs.existsSync(userDataDir)) {
-          launchOptions.userDataDir = userDataDir;
-          console.log('🔐 Using existing Chrome profile for authentication');
-        }
-      } else if (process.platform === 'linux') {
-        // Linux Chrome profile path
-        const userDataDir = path.join(process.env.HOME, '.config', 'google-chrome');
-        if (fs.existsSync(userDataDir)) {
-          launchOptions.userDataDir = userDataDir;
-          console.log('🔐 Using existing Chrome profile for authentication');
+      // Remove Chrome profile usage - not needed for image scraping
+      // and causes issues on servers/mobile
+
+      // Use system Chrome if available (for Docker)
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        // Check if Chrome actually exists
+        if (require('fs').existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+          launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+          console.log('🔧 Using system Chrome:', process.env.PUPPETEER_EXECUTABLE_PATH);
+        } else {
+          console.log('⚠️ Chrome not found at specified path, using bundled Chromium');
         }
       }
 
-        // Use system Chrome if available (for Docker)
-        if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-          launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-          console.log('🔧 Using system Chrome:', process.env.PUPPETEER_EXECUTABLE_PATH);
-        }
-
         this.browser = await puppeteerExtra.launch({
           ...launchOptions,
-          ignoreHTTPSErrors: true
+          ignoreHTTPSErrors: true,
+          headless: true  // Always run headless for servers/mobile
         });
         
         console.log('✅ Advanced Thunderbit Scraper initialized successfully');
@@ -125,40 +117,221 @@ class AdvancedThunderbitScraper {
 
   async handleAuthentication(url) {
     try {
-      console.log('🔐 Navigating to Taobao to check authentication...');
+      console.log('🔐 Attempting to use authenticated session...');
       
-      // Go to Taobao main page first to check if we're logged in
-      await this.page.goto('https://www.taobao.com', { 
+      // Try to navigate directly to the target URL first
+      console.log(`🎯 Navigating directly to: ${url}`);
+      await this.page.goto(url, { 
         waitUntil: 'networkidle2',
         timeout: 30000 
       });
       
       // Wait a bit for any redirects or login prompts
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Check if we're on a login page or if there are login prompts
       const currentUrl = this.page.url();
       const pageContent = await this.page.content();
       
-      if (currentUrl.includes('login') || pageContent.includes('登录') || pageContent.includes('login')) {
-        console.log('⚠️ Not authenticated - you may need to log in manually');
-        console.log('💡 Tip: Open Chrome manually, log into Taobao, then run the scraper');
+      // Check for various login indicators
+      const isLoginPage = currentUrl.includes('login') || 
+                         currentUrl.includes('passport') ||
+                         currentUrl.includes('signin') ||
+                         pageContent.includes('登录') || 
+                         pageContent.includes('login') || 
+                         pageContent.includes('login-box') ||
+                         pageContent.includes('signin') ||
+                         pageContent.includes('passport') ||
+                         pageContent.includes('登录页面') ||
+                         pageContent.includes('请登录');
+      
+      if (isLoginPage) {
+        console.log('⚠️ Redirected to login page - attempting to close login dialog...');
         
-        // If not headless, we can wait for manual login
-        if (!this.page.browser().isConnected()) {
-          console.log('⏳ Waiting 30 seconds for manual login...');
-          await new Promise(resolve => setTimeout(resolve, 30000));
+        // Try to close login dialog if it exists
+        try {
+          // Wait a bit for any dialogs to appear
+          console.log('⏳ Waiting for login dialog to appear...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // First, let's see what elements are available on the page
+          console.log('🔍 Debugging: Checking for close button elements...');
+          const allImages = await this.page.$$eval('img', imgs => 
+            imgs.map(img => ({
+              src: img.src,
+              style: img.style.cssText,
+              className: img.className,
+              alt: img.alt,
+              parentElement: img.parentElement ? img.parentElement.tagName : 'none'
+            }))
+          );
+          console.log('🔍 Found images on page:', allImages.length);
+          allImages.forEach((img, i) => {
+            if (img.src.includes('TB1QZN') || img.style.includes('cursor: pointer') || img.style.includes('z-index')) {
+              console.log(`🔍 Image ${i}:`, img);
+            }
+          });
+          
+          // Also check for any clickable elements
+          const clickableElements = await this.page.$$eval('[style*="cursor: pointer"], button, [onclick], [role="button"]', elements => 
+            elements.map(el => ({
+              tagName: el.tagName,
+              className: el.className,
+              style: el.style.cssText,
+              src: el.src || '',
+              innerHTML: el.innerHTML.substring(0, 100)
+            }))
+          );
+          console.log('🔍 Found clickable elements:', clickableElements.length);
+          clickableElements.forEach((el, i) => {
+            if (el.style.includes('cursor: pointer') || el.style.includes('z-index')) {
+              console.log(`🔍 Clickable element ${i}:`, el);
+            }
+          });
+          
+          // Try multiple close button selectors for different Taobao/Tmall login dialogs
+          const closeSelectors = [
+            'img[src*="TB1QZN.CYj1gK0jSZFuXXcrHpXa-200-200.png"]', // The specific close icon you mentioned
+            'img[style*="cursor: pointer"][style*="z-index: 1"]', // Close button with specific styling
+            'img[style*="cursor: pointer"]', // Any clickable image
+            '[style*="cursor: pointer"][style*="z-index: 1"]', // Generic close button with cursor pointer
+            'button[style*="cursor: pointer"]', // Clickable button
+            '[onclick][style*="cursor: pointer"]', // Element with onclick and cursor pointer
+            '.baxia-dialog-close',
+            '.close',
+            '.dialog-close',
+            '[class*="close"]',
+            '[class*="dialog"] img[style*="cursor: pointer"]', // Image in dialog with cursor pointer
+            '[class*="popup"] img[style*="cursor: pointer"]', // Image in popup with cursor pointer
+            '[class*="modal"] img[style*="cursor: pointer"]' // Image in modal with cursor pointer
+          ];
+          
+          let closed = false;
+          for (const selector of closeSelectors) {
+            try {
+              const element = await this.page.$(selector);
+              if (element) {
+                console.log(`🔍 Found element with selector: ${selector}`);
+                // Try to scroll the element into view first
+                await element.scrollIntoView();
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Try clicking the element
+                await element.click();
+                console.log(`✅ Closed login dialog using selector: ${selector}`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                closed = true;
+                break;
+              }
+            } catch (e) {
+              console.log(`❌ Failed to click element with selector: ${selector} - ${e.message}`);
+            }
+          }
+          
+          if (!closed) {
+            console.log('ℹ️ No login dialog close button found with image selectors');
+            
+            // Try to close any dialog or popup that might be present
+            console.log('🔍 Trying to close any dialog or popup...');
+            const dialogSelectors = [
+              '[role="dialog"]',
+              '.dialog',
+              '.popup',
+              '.modal',
+              '.overlay',
+              '[class*="dialog"]',
+              '[class*="popup"]',
+              '[class*="modal"]',
+              '[class*="overlay"]',
+              '[class*="login"]',
+              '[class*="auth"]'
+            ];
+            
+            for (const selector of dialogSelectors) {
+              try {
+                const element = await this.page.$(selector);
+                if (element) {
+                  console.log(`🔍 Found dialog element: ${selector}`);
+                  // Try to find a close button within this dialog
+                  const closeBtn = await element.$('button, .close, [class*="close"], img[style*="cursor: pointer"], [style*="cursor: pointer"]');
+                  if (closeBtn) {
+                    await closeBtn.scrollIntoView();
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    await closeBtn.click();
+                    console.log(`✅ Closed dialog using close button in: ${selector}`);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    closed = true;
+                    break;
+                  }
+                }
+              } catch (e) {
+                console.log(`❌ Failed to close dialog with selector: ${selector} - ${e.message}`);
+              }
+            }
+          }
+          
+          if (!closed) {
+            console.log('ℹ️ No close button found, trying to press Escape key...');
+            try {
+              await this.page.keyboard.press('Escape');
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              console.log('✅ Pressed Escape key');
+            } catch (e) {
+              console.log('❌ Failed to press Escape key:', e.message);
+            }
+          }
+        } catch (e) {
+          console.log('ℹ️ Error trying to close login dialog:', e.message);
+        }
+        
+        // Instead of going back, try to navigate directly to the original URL
+        try {
+          console.log('🔄 Attempting to navigate directly to original URL...');
+          await this.page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          console.log('✅ Successfully navigated to original URL');
+        } catch (e) {
+          console.log('ℹ️ Direct navigation failed, trying goBack...');
+          try {
+            await this.page.goBack();
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            console.log('✅ Went back from login page');
+          } catch (e2) {
+            console.log('ℹ️ Could not go back, trying refresh...');
+            await this.page.reload({ waitUntil: 'networkidle2' });
+          }
+        }
+        
+        // Check if we're still on login page
+        const newUrl = this.page.url();
+        const newContent = await this.page.content();
+        
+        if (newUrl.includes('login') || newContent.includes('登录') || newContent.includes('login') || newContent.includes('login-box')) {
+          console.log('⚠️ Still on login page - trying Taobao main page first...');
+          
+          // Go to Taobao main page to establish session
+          await this.page.goto('https://www.taobao.com', { 
+            waitUntil: 'networkidle2',
+            timeout: 30000 
+          });
+          
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Now try the target URL again
+          console.log(`🎯 Retrying target URL: ${url}`);
+          await this.page.goto(url, { 
+            waitUntil: 'networkidle2',
+            timeout: 30000 
+          });
+        } else {
+          console.log('✅ Successfully bypassed login page');
+          
+          // Wait a bit more for the page to fully load
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
       } else {
-        console.log('✅ Appears to be authenticated or no login required');
+        console.log('✅ Successfully loaded target URL');
       }
-      
-      // Now navigate to the target URL
-      console.log(`🎯 Navigating to target URL: ${url}`);
-      await this.page.goto(url, { 
-        waitUntil: 'networkidle2',
-        timeout: 30000 
-      });
       
     } catch (error) {
       console.error('❌ Authentication handling failed:', error.message);
@@ -181,14 +354,295 @@ class AdvancedThunderbitScraper {
     }
   }
 
+  async scrapeWithTraditional(url) {
+    try {
+      console.log(`🔍 Traditional scraping: ${url}`);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+        },
+        timeout: 10000
+      });
+      
+      return gatherImageUrlsFromHtml(url, response.data);
+    } catch (error) {
+      console.error(`❌ Traditional scraping failed for ${url}:`, error.message);
+      return [];
+    }
+  }
+
+  async scrapeWithEnhancedTraditional(url) {
+    try {
+      console.log(`🚀 Enhanced traditional scraping: ${url}`);
+      
+      // For Chinese e-commerce sites, try multiple approaches
+      if (url.includes('taobao.com') || url.includes('tmall.com')) {
+        console.log('🛍️ Chinese e-commerce site detected - trying multiple approaches...');
+        
+        // Try 1: Use AliExpress instead (more accessible than Tmall/Taobao)
+        if (url.includes('tmall.com') || url.includes('taobao.com')) {
+          console.log('🛍️ Tmall/Taobao detected - these sites are heavily protected');
+          console.log('💡 Recommendation: Use AliExpress or other e-commerce sites instead');
+          console.log('📝 Example: https://ar.aliexpress.com/item/1005008998498712.html');
+          
+          // Still try to extract what we can from the skeleton page
+          const response = await axios.get(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            },
+            timeout: 10000
+          });
+          
+          const images = gatherImageUrlsFromHtml(url, response.data);
+          const filteredImages = images.filter(img => this.isValidImageUrl(img));
+          console.log(`⚠️ Tmall/Taobao: Found ${filteredImages.length} valid images (limited due to anti-bot protection)`);
+          return filteredImages;
+        }
+        
+        // Try 2: Desktop with different headers
+        const userAgents = [
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        ];
+        
+        const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+        
+        const response = await axios.get(url, {
+          headers: {
+            'User-Agent': randomUA,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0',
+            'DNT': '1',
+            'Referer': 'https://www.google.com/',
+          },
+          timeout: 15000,
+          maxRedirects: 5
+        });
+        
+        console.log(`📊 Desktop response: ${response.status}, Content length: ${response.data.length}`);
+        
+        // Check if it's a skeleton page
+        if (response.data.length < 10000 || response.data.includes('loading') || response.data.includes('skeleton')) {
+          console.log('⚠️ Skeleton page detected - trying alternative approach...');
+          
+          // Try 3: Alternative API endpoints or different URL patterns
+          const alternativeUrls = [
+            url.replace('detail.tmall.com', 'item.taobao.com'),
+            url.replace('detail.tmall.com', 'detail.tmall.com').replace('item.htm', 'item.htm?spm=a220m.1000858.1000725.1'),
+            url + '&spm=a220m.1000858.1000725.1'
+          ];
+          
+          for (const altUrl of alternativeUrls) {
+            try {
+              console.log(`🔄 Trying alternative URL: ${altUrl}`);
+              const altResponse = await axios.get(altUrl, {
+                headers: {
+                  'User-Agent': randomUA,
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                },
+                timeout: 10000
+              });
+              
+              if (altResponse.data.length > 10000 && !altResponse.data.includes('loading')) {
+                console.log(`✅ Alternative URL has content: ${altResponse.data.length} chars`);
+                const altImages = gatherImageUrlsFromHtml(altUrl, altResponse.data);
+                if (altImages.length > 0) {
+                  console.log(`🔄 Alternative URL found ${altImages.length} images`);
+                  return altImages;
+                }
+              }
+            } catch (e) {
+              console.log(`ℹ️ Alternative URL failed: ${e.message}`);
+            }
+          }
+        }
+        
+        // Enhanced image extraction from desktop response
+        const images = gatherImageUrlsFromHtml(url, response.data);
+        const additionalImages = this.extractChineseEcommerceImages(response.data, url);
+        images.push(...additionalImages);
+        
+        // Remove duplicates and filter
+        const uniqueImages = [...new Set(images)].filter(img => this.isValidImageUrl(img));
+        console.log(`🎯 Enhanced extraction found ${uniqueImages.length} valid images`);
+        return uniqueImages;
+      }
+      
+      // For non-Chinese sites, use standard approach
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+        },
+        timeout: 15000
+      });
+      
+      return gatherImageUrlsFromHtml(url, response.data);
+    } catch (error) {
+      console.error(`❌ Enhanced traditional scraping failed for ${url}:`, error.message);
+      return [];
+    }
+  }
+
+  extractChineseEcommerceImages(html, baseUrl) {
+    const images = [];
+    
+    // Look for common Chinese e-commerce image patterns
+    const patterns = [
+      // Alibaba CDN patterns - more specific
+      /https?:\/\/[^"'\s]*\.alicdn\.com[^"'\s]*\.(jpg|jpeg|png|gif|webp|bmp)(\?[^"'\s]*)?/gi,
+      // Tmall patterns - more specific
+      /https?:\/\/[^"'\s]*\.tmall\.com[^"'\s]*\.(jpg|jpeg|png|gif|webp|bmp)(\?[^"'\s]*)?/gi,
+      // Taobao patterns - more specific
+      /https?:\/\/[^"'\s]*\.taobao\.com[^"'\s]*\.(jpg|jpeg|png|gif|webp|bmp)(\?[^"'\s]*)?/gi,
+      // General image patterns - more specific
+      /https?:\/\/[^"'\s]*\.(jpg|jpeg|png|gif|webp|bmp)(\?[^"'\s]*)?/gi,
+      // Data attributes
+      /data-src="([^"]*\.(jpg|jpeg|png|gif|webp|bmp)[^"]*)"/gi,
+      /data-original="([^"]*\.(jpg|jpeg|png|gif|webp|bmp)[^"]*)"/gi,
+      /data-lazy="([^"]*\.(jpg|jpeg|png|gif|webp|bmp)[^"]*)"/gi,
+      // Background images
+      /background-image:\s*url\(['"]?([^'"]*\.(jpg|jpeg|png|gif|webp|bmp)[^'"]*)['"]?\)/gi
+    ];
+    
+    patterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(html)) !== null) {
+        const imageUrl = match[1] || match[0];
+        if (imageUrl && imageUrl.startsWith('http') && this.isValidImageUrl(imageUrl)) {
+          images.push(imageUrl);
+        }
+      }
+    });
+    
+    // Look for JSON data containing image URLs
+    const jsonPattern = /window\.__INITIAL_STATE__\s*=\s*({.+?});/;
+    const jsonMatch = html.match(jsonPattern);
+    if (jsonMatch) {
+      try {
+        const jsonData = JSON.parse(jsonMatch[1]);
+        const extractImagesFromObject = (obj) => {
+          if (typeof obj === 'string' && obj.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)) {
+            if (obj.startsWith('http') && this.isValidImageUrl(obj)) {
+              images.push(obj);
+            } else if (!obj.startsWith('http')) {
+              const fullUrl = require('url').resolve(baseUrl, obj);
+              if (this.isValidImageUrl(fullUrl)) {
+                images.push(fullUrl);
+              }
+            }
+          } else if (typeof obj === 'object' && obj !== null) {
+            Object.values(obj).forEach(extractImagesFromObject);
+          }
+        };
+        extractImagesFromObject(jsonData);
+      } catch (e) {
+        // Ignore JSON parsing errors
+      }
+    }
+    
+    // Filter out duplicates and invalid URLs
+    const uniqueImages = [...new Set(images)].filter(img => this.isValidImageUrl(img));
+    console.log(`🛍️ Chinese e-commerce extraction found ${uniqueImages.length} valid images`);
+    
+    return uniqueImages;
+  }
+
+  isValidImageUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    
+    // Must be HTTP/HTTPS
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
+    
+    // Must have image extension
+    if (!url.match(/\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i)) return false;
+    
+    // Filter out common non-image patterns
+    const excludePatterns = [
+      /\.js$/i,
+      /\.css$/i,
+      /\.html$/i,
+      /\.htm$/i,
+      /\.xml$/i,
+      /\.json$/i,
+      /\.txt$/i,
+      /\.ico$/i,
+      /\.woff/i,
+      /\.ttf$/i,
+      /\.eot$/i,
+      /1x1/i,
+      /spacer/i,
+      /placeholder/i,
+      /loading/i,
+      /logo/i,
+      /icon/i,
+      /button/i,
+      /arrow/i,
+      /close/i,
+      /min\./i, // Minified files
+      /\.min\./i,
+      /vconsole/i,
+      /bat/i,
+      /error/i,
+      /detail-web/i,
+      /queryH5Detail/i,
+      /feeds/i,
+      /cdn_error/i,
+      /dinamic/i,
+      /alilog/i,
+      /appx/i,
+      /fragment/i,
+      /mmstat/i,
+      /unpkg/i,
+      /R0lGODlhAQABAIAAAP/i, // 1x1 transparent GIF
+      /item\.htm/i, // HTML pages
+      /queryH5Detail/i,
+      /tracker/i, // Tracking scripts
+      /aplus/i, // Analytics
+      /m\.intl\.taobao\.com/i, // Mobile URLs
+      /g\.alicdn\.com\/tb/i, // Taobao scripts
+      /g\.alicdn\.com\/alilog/i, // Alibaba logging
+      /javascript:/i,
+      /data:/i,
+      /blob:/i,
+      /about:/i,
+      /chrome-extension:/i,
+      /moz-extension:/i,
+      /safari-extension:/i,
+      /ms-browser-extension:/i
+    ];
+    
+    return !excludePatterns.some(pattern => pattern.test(url));
+  }
+
   async scrapeWithAdvancedThunderbit(url) {
     try {
       console.log(`\n🎯 Advanced Thunderbit Scraper analyzing: ${url}`);
       
       const browser = await this.initialize();
       if (!browser) {
-        console.log('⚠️ Puppeteer not available, falling back to traditional scraping...');
-        return await this.scrapeWithTraditional(url);
+        console.log('⚠️ Puppeteer not available, using enhanced traditional scraping...');
+        return await this.scrapeWithEnhancedTraditional(url);
       }
       
       this.page = await this.browser.newPage();
@@ -196,8 +650,13 @@ class AdvancedThunderbitScraper {
       // Check if this is a Taobao/Tmall URL that needs authentication
       const needsAuth = url.includes('taobao.com') || url.includes('tmall.com');
       if (needsAuth) {
-        console.log('🔐 Detected Taobao/Tmall URL - checking authentication...');
-        await this.handleAuthentication(url);
+        console.log('🔐 Detected Taobao/Tmall URL - attempting authentication...');
+        try {
+          await this.handleAuthentication(url);
+        } catch (error) {
+          console.error('❌ Authentication failed, continuing with scraping:', error.message);
+          // Continue with scraping even if authentication fails
+        }
       }
       
       // Advanced browser configuration
@@ -209,12 +668,16 @@ class AdvancedThunderbitScraper {
       // Advanced request interception
       await this.setupRequestInterception();
 
-      // Navigate to the page
-      console.log('📱 Loading page...');
-      await this.page.goto(url, { 
-        waitUntil: 'networkidle2', 
-        timeout: 30000 
-      });
+      // Navigate to the page (only if not already loaded by authentication)
+      if (!needsAuth) {
+        console.log('📱 Loading page...');
+        await this.page.goto(url, { 
+          waitUntil: 'networkidle2',
+          timeout: 30000 
+        });
+      } else {
+        console.log('📱 Page already loaded by authentication process');
+      }
 
       // Wait for initial content to load
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -256,11 +719,16 @@ class AdvancedThunderbitScraper {
       const combinedImages = [...visibleImages, ...allImages];
       const uniqueImages = [...new Set(combinedImages)];
 
-      console.log(`✅ Visual AI found ${uniqueImages.length} unique images`);
-      console.log(`📊 Breakdown: ${visibleImages.length} visible + ${allImages.length} all sources = ${uniqueImages.length} unique`);
+      // Step 5: Filter out invalid image URLs and convert to URL strings
+      const validImages = uniqueImages
+        .map(img => typeof img === 'string' ? img : img.url)
+        .filter(url => this.isValidImageUrl(url));
+
+      console.log(`✅ Visual AI found ${validImages.length} valid images (filtered from ${uniqueImages.length} total)`);
+      console.log(`📊 Breakdown: ${visibleImages.length} visible + ${allImages.length} all sources = ${uniqueImages.length} unique → ${validImages.length} valid`);
       
       await this.page.close();
-      return uniqueImages;
+      return validImages;
 
     } catch (error) {
       console.error('Visual AI Scraper error:', error.message);
@@ -707,15 +1175,53 @@ function gatherImageUrlsFromHtml(base, html) {
   });
 
   // Look for JSON data that might contain image URLs
-  const jsonMatches = html.match(/"https?:\/\/[^"]*\.(?:jpe?g|png|webp|bmp)[^"]*"/gi) || [];
+  const jsonMatches = html.match(/"https?:\/\/[^"]*\.(?:jpe?g|png|webp|bmp|svg)[^"]*"/gi) || [];
   jsonMatches.forEach(match => {
     const url = match.replace(/"/g, '');
     const abs = absoluteUrl(base, url);
     if (abs) imgs.push(abs);
   });
 
+  // Enhanced: Extract images from JavaScript variables for Chinese e-commerce sites
+  const scriptTags = $('script').text();
+  
+  // Look for common image URL patterns in JavaScript
+  const jsImagePatterns = [
+    /['"](https?:\/\/[^'"]*\.(?:jpg|jpeg|png|gif|webp|bmp|svg)[^'"]*)['"]/gi,
+    /['"](https?:\/\/[^'"]*\.alicdn\.com[^'"]*)['"]/gi,
+    /['"](https?:\/\/[^'"]*\.tmall\.com[^'"]*)['"]/gi,
+    /['"](https?:\/\/[^'"]*\.taobao\.com[^'"]*)['"]/gi,
+    /imageUrl['"]?\s*[:=]\s*['"]([^'"]+)['"]/gi,
+    /imgUrl['"]?\s*[:=]\s*['"]([^'"]+)['"]/gi,
+    /src['"]?\s*[:=]\s*['"]([^'"]+)['"]/gi
+  ];
+
+  jsImagePatterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(scriptTags)) !== null) {
+      if (match[1]) {
+        const abs = absoluteUrl(base, match[1]);
+        if (abs) imgs.push(abs);
+      }
+    }
+  });
+
+  // Filter out invalid URLs and tracking pixels
+  const filteredImgs = imgs.filter(img => 
+    img && 
+    (img.startsWith('http://') || img.startsWith('https://')) &&
+    !img.includes('data:') &&
+    !img.includes('javascript:') &&
+    !img.includes('mailto:') &&
+    !img.includes('1x1') && // Filter out tracking pixels
+    !img.includes('spacer') && // Filter out spacer images
+    img.length > 10 // Filter out very short URLs
+  );
+
+  console.log(`🔍 Enhanced traditional scraping found ${filteredImgs.length} images`);
+  
   // dedupe and return
-  return Array.from(new Set(imgs));
+  return Array.from(new Set(filteredImgs));
 }
 
 app.post('/api/scan', async (req, res) => {
