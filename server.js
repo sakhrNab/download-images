@@ -59,46 +59,27 @@ class AdvancedThunderbitScraper {
       try {
         console.log('🚀 Initializing Advanced Thunderbit Scraper...');
         
-      // Configure Puppeteer for Docker environment
-      const launchOptions = {
-        headless: false, // Set to false to see the browser (for debugging)
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=VizDisplayCompositor',
-          '--disable-web-security',
-          '--disable-features=TranslateUI',
-          '--disable-ipc-flooding-protection',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-gpu',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-extensions-except',
-          '--load-extension'
-        ],
-        ignoreDefaultArgs: ['--enable-automation'],
-      };
-
-      // Use existing Chrome profile for authentication
-      if (process.platform === 'win32') {
-        // Windows Chrome profile path
-        const userDataDir = path.join(process.env.USERPROFILE, 'AppData', 'Local', 'Google', 'Chrome', 'User Data');
-        if (fs.existsSync(userDataDir)) {
-          launchOptions.userDataDir = userDataDir;
-          console.log('🔐 Using existing Chrome profile for authentication');
-        }
-      } else if (process.platform === 'linux') {
-        // Linux Chrome profile path
-        const userDataDir = path.join(process.env.HOME, '.config', 'google-chrome');
-        if (fs.existsSync(userDataDir)) {
-          launchOptions.userDataDir = userDataDir;
-          console.log('🔐 Using existing Chrome profile for authentication');
-        }
-      }
+        // Configure Puppeteer for Docker environment
+        const launchOptions = {
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-web-security',
+            '--disable-features=TranslateUI',
+            '--disable-ipc-flooding-protection',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding'
+          ],
+          ignoreDefaultArgs: ['--enable-automation'],
+        };
 
         // Use system Chrome if available (for Docker)
         if (process.env.PUPPETEER_EXECUTABLE_PATH) {
@@ -123,64 +104,6 @@ class AdvancedThunderbitScraper {
     return this.browser;
   }
 
-  async handleAuthentication(url) {
-    try {
-      console.log('🔐 Navigating to Taobao to check authentication...');
-      
-      // Go to Taobao main page first to check if we're logged in
-      await this.page.goto('https://www.taobao.com', { 
-        waitUntil: 'networkidle2',
-        timeout: 30000 
-      });
-      
-      // Wait a bit for any redirects or login prompts
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Check if we're on a login page or if there are login prompts
-      const currentUrl = this.page.url();
-      const pageContent = await this.page.content();
-      
-      if (currentUrl.includes('login') || pageContent.includes('登录') || pageContent.includes('login')) {
-        console.log('⚠️ Not authenticated - you may need to log in manually');
-        console.log('💡 Tip: Open Chrome manually, log into Taobao, then run the scraper');
-        
-        // If not headless, we can wait for manual login
-        if (!this.page.browser().isConnected()) {
-          console.log('⏳ Waiting 30 seconds for manual login...');
-          await new Promise(resolve => setTimeout(resolve, 30000));
-        }
-      } else {
-        console.log('✅ Appears to be authenticated or no login required');
-      }
-      
-      // Now navigate to the target URL
-      console.log(`🎯 Navigating to target URL: ${url}`);
-      await this.page.goto(url, { 
-        waitUntil: 'networkidle2',
-        timeout: 30000 
-      });
-      
-    } catch (error) {
-      console.error('❌ Authentication handling failed:', error.message);
-      // Continue anyway - maybe it will work
-    }
-  }
-
-  // Method to extract cookies from your existing browser session
-  async extractCookiesFromBrowser() {
-    try {
-      console.log('🍪 Attempting to extract cookies from existing browser session...');
-      
-      // This would require a more complex setup to extract cookies
-      // For now, we'll rely on the user data directory approach
-      console.log('💡 Using Chrome profile data directory for authentication');
-      return true;
-    } catch (error) {
-      console.error('❌ Cookie extraction failed:', error.message);
-      return false;
-    }
-  }
-
   async scrapeWithAdvancedThunderbit(url) {
     try {
       console.log(`\n🎯 Advanced Thunderbit Scraper analyzing: ${url}`);
@@ -192,13 +115,6 @@ class AdvancedThunderbitScraper {
       }
       
       this.page = await this.browser.newPage();
-      
-      // Check if this is a Taobao/Tmall URL that needs authentication
-      const needsAuth = url.includes('taobao.com') || url.includes('tmall.com');
-      if (needsAuth) {
-        console.log('🔐 Detected Taobao/Tmall URL - checking authentication...');
-        await this.handleAuthentication(url);
-      }
       
       // Advanced browser configuration
       await this.setupAdvancedBrowser();
